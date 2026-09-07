@@ -19,7 +19,7 @@ def start_fake_server():
             self.send_response(200)
             self.send_header("Content-type", "text/plain")
             self.end_headers()
-            self.wfile.write(b"Bot is perfectly running!")
+            self.wfile.write(b"Bot is perfectly running on Render!")
         def log_message(self, format, *args): return
     port = int(os.environ.get("PORT", 10000))
     server = http.server.HTTPServer(("0.0.0.0", port), DummyHandler)
@@ -31,61 +31,84 @@ def fetch_zenrows_get(url, query_params):
 async def colab_cloud_autopilot_submit(group_link: str):
     if not BOT_TOKEN or not ZENROWS_API_KEY:
         return None, "❌ एरर: गुप्त तिजोरी में टोकन सेट नहीं हैं।"
+        
     zenrows_gateway = "https://zenrows.com"
     target_url = "https://groupsor.link"
     
     js_actions = [
-        {"wait_for": "input[name='link']"},
-        {"fill": ["input[name='link']", group_link]},
-        {"select_option": ["select[name='cate']", "4"]},
-        {"select_option": ["select[name='country']", "102"]},
-        {"select_option": ["select[name='language']", "45"]},
+        {"wait_for": "input[placeholder*='WhatsApp']"},
+        {"fill": ["input[placeholder*='WhatsApp']", group_link]},
+        
+        # ड्रापडाउन सेलेक्ट करने का बिल्कुल सटीक मॉडर्न तरीका
+        {"evaluate": """
+            let dropdowns = document.querySelectorAll("select");
+            if(dropdowns.length >= 3) {
+                dropdowns[0].value = "4"; 
+                dropdowns[0].dispatchEvent(new Event('change', { bubbles: true }));
+                
+                dropdowns[1].value = "102"; 
+                dropdowns[1].dispatchEvent(new Event('change', { bubbles: true }));
+                
+                dropdowns[2].value = "45"; 
+                dropdowns[2].dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        """},
         {"wait": 2000},
-        {"click": "input[type='submit'], .btn-success"},
+        {"click": "button[type='submit'], input[type='submit'], .btn-success"},
         {"wait": 12000}
     ]
+    
+    # 🌟 1 IP प्रति दिन की लिमिट तोड़ने के लिए रेसिडेंशियल प्रॉक्सी कॉन्फ़िगरेशन
     params = {
         "apikey": ZENROWS_API_KEY,
         "url": target_url,
         "js_render": "true",
-        "premium_proxy": "true",
+        "antibot": "true",           # 🛡️ क्लाउडफ्लेयर 'Verifying...' को बायपास करने के लिए
+        "premium_proxy": "true",     
+        "proxy_country": "in",       # 🇮🇳 शुद्ध भारतीय फ्रेश IP के लिए
         "js_instructions": json.dumps(js_actions),  
-        "screenshot": "true", # 📸 स्क्रीनशॉट ऑन रखा गया है
+        "screenshot": "true",        # 📸 लाइव सबूत देखने के लिए स्क्रीनशॉट ऑन
         "window_width": "1920",
         "window_height": "1080"
     }
+    
     try:
         response = await asyncio.to_thread(fetch_zenrows_get, zenrows_gateway, params)
         content_type = response.headers.get('Content-Type', '')
         
-        # 🌟 सुधार: चाहे वेबसाइट एरर दे या कुछ भी, अगर फोटो आई है तो उसे सीधे टेलीग्राम पर दिखाओ
         if response.status_code == 200 and 'image' in content_type:
-            return response.content, "📸 वेबसाइट का लाइव स्क्रीनशॉट नीचे देखें! खुद चेक करें कि पेज पर क्या एरर आई है।"
+            return response.content, "📸 फॉर्म ऑटो-सबमिशन का लाइव स्क्रीनशॉट नीचे देखें!"
         else:
             res_text = response.text
             if "already" in res_text.lower() or "exist" in res_text.lower():
-                return None, "🛑 वेबसाइट का सर्वर आपके बिल्कुल नए लिंक को भी ऑटो-ब्लॉक कर रहा है।"
+                return None, "🛑 वेबसाइट अलर्ट: यह आईपी लिमिट या पुराना लिंक होने के कारण रिजेक्ट हुआ।"
             return None, f"🛑 सबमिशन प्रोसेस अधूरा रहा (Code: {response.status_code})"
     except Exception as e:
         return None, f"❌ एपीआई कनेक्शन एरर: {str(e)}"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👋 स्क्रीनशॉट-फोर्स बोट ऑनलाइन है! अपना WhatsApp लिंक भेजें।")
+    await update.message.reply_text("👋 क्लाउडफ्लेयर फिक्स बोट ऑनलाइन है! अपना WhatsApp लिंक भेजें।")
 
 async def msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    m = re.search(WHATSAPP_LINK_PATTERN, update.message.text)
+    # लिंक के पीछे के फालतू ट्रैकिंग कोड्स को ऑटोमैटिकली साफ़ करना
+    raw_text = update.message.text
+    m = re.search(WHATSAPP_LINK_PATTERN, raw_text)
+    
     if m:
-        status_msg = await update.message.reply_text("📥 लिंक मिल गया! लाइव स्क्रीनशॉट खींचा जा रहा है... कृपया 40 सेकंड रुकें...")
-        img_bytes, text_response = await colab_cloud_autopilot_submit(m.group(1))
+        clean_url = m.group(1) # केवल शुद्ध व्हाट्सएप इनविटेशन लिंक निकालेगा
+        status_msg = await update.message.reply_text("📥 लिंक मिल गया! क्लाउडफ्लेयर बाईपास करके फ्रेश भारतीय IP से सबमिट किया जा रहा है... कृपया 45 सेकंड रुकें...")
+        
+        img_bytes, text_response = await colab_cloud_autopilot_submit(clean_url)
         try: await status_msg.delete()  
         except: pass
+        
         if img_bytes:
             photo_file = io.BytesIO(img_bytes)
-            photo_file.name = "live_view.png"
+            photo_file.name = "live_bypass.png"
             try: await update.message.reply_photo(photo=photo_file, caption=text_response)
             except Exception:
                 photo_file.seek(0)
-                await update.message.reply_document(document=photo_file, filename="live_view.png", caption=text_response)
+                await update.message.reply_document(document=photo_file, filename="live_bypass.png", caption=text_response)
         else:
             await update.message.reply_text(text_response)
     else:
@@ -97,6 +120,7 @@ def main():
     app = Application.builder().token(BOT_TOKEN).connect_timeout(60).read_timeout(60).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, msg))
+    print("🚀 BYPASS BOT IS RUNNING SUCCESSFULLY!")
     app.run_polling()
 
 if __name__ == "__main__":
